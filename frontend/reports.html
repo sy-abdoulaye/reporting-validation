@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mes rapports — Reporting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+<div id="toasts"></div>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="container">
+    <a href="index.html" class="nav-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      Reporting
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload
+      </a>
+      <a href="reports.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Mes rapports
+      </a>
+      <a href="history.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 1 .5 4M3 21v-6h6"/></svg>
+        Historique
+      </a>
+      <a href="profile.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Profil
+      </a>
+      <a href="admin.html" id="nav-admin" class="nav-link" style="display:none">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Admin
+      </a>
+    </div>
+    <div class="nav-right">
+      <div class="nav-user">
+        <div class="avatar" id="nav-avatar">?</div>
+        <div>
+          <div class="nav-username" id="nav-name">—</div>
+          <div class="nav-role" id="nav-role"></div>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Déconnexion
+      </button>
+    </div>
+  </div>
+</nav>
+
+<main class="page-main">
+<div class="container">
+
+  <div class="page-header flex items-center justify-between" style="flex-wrap:wrap;gap:.75rem">
+    <div>
+      <h1>Mes rapports</h1>
+      <p>Tous les rapports que vous avez générés, prêts à télécharger.</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="index.html" class="btn btn-primary btn-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nouveau rapport
+      </a>
+      <button class="btn btn-secondary btn-sm" onclick="loadReports()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.97"/></svg>
+        Actualiser
+      </button>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="filters">
+    <select id="f-days" class="form-control" style="max-width:160px" onchange="loadReports()">
+      <option value="7">7 derniers jours</option>
+      <option value="30">30 derniers jours</option>
+      <option value="90" selected>90 derniers jours</option>
+      <option value="365">1 an</option>
+    </select>
+    <input id="f-search" type="text" class="form-control" style="max-width:260px"
+           placeholder="Rechercher un rapport…" oninput="debounceLoad()">
+    <span class="text-sm text-muted" id="total-label" style="margin-left:auto"></span>
+  </div>
+
+  <!-- LISTE -->
+  <div class="card">
+    <div class="card-body" style="padding:0">
+      <div id="reports-table">
+        <div class="spinner-center"><div class="spinner spinner-lg"></div></div>
+      </div>
+    </div>
+    <div class="card-footer" style="justify-content:space-between" id="footer-wrap">
+      <span class="text-sm text-muted" id="page-info"></span>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+</div>
+</main>
+
+<script>
+const st = { page: 1, pages: 1, debounce: null };
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (!requireAuth()) return;
+  initNav();
+  loadReports();
+});
+
+function debounceLoad() {
+  clearTimeout(st.debounce);
+  st.debounce = setTimeout(() => loadReports(1), 400);
+}
+
+function reportIdOf(item) {
+  return item.report_id || item.details?.report_id || null;
+}
+
+async function loadReports(page = 1) {
+  st.page = page;
+  document.getElementById('reports-table').innerHTML =
+    '<div class="spinner-center"><div class="spinner spinner-lg"></div></div>';
+
+  const params = new URLSearchParams({
+    page, limit: 15,
+    action: 'generate',
+    status: 'success',
+    days: document.getElementById('f-days').value,
+  });
+  const search = document.getElementById('f-search').value.trim();
+  if (search) params.set('search', search);
+
+  try {
+    const data = await apiJSON(`/history/?${params}`);
+    if (!data) return;
+    st.pages = data.pages || 1;
+    document.getElementById('total-label').textContent =
+      data.total ? `${data.total} rapport${data.total > 1 ? 's' : ''}` : '';
+    renderTable(data.items || []);
+    renderPagination(data);
+  } catch (err) {
+    document.getElementById('reports-table').innerHTML =
+      `<div class="alert alert-danger" style="margin:1rem">${err.message}</div>`;
+  }
+}
+
+function renderTable(items) {
+  if (!items.length) {
+    document.getElementById('reports-table').innerHTML = `
+      <div class="empty">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <h3>Aucun rapport</h3>
+        <p>Générez votre premier rapport depuis la page Upload.</p>
+      </div>`;
+    document.getElementById('footer-wrap').style.display = 'none';
+    return;
+  }
+  document.getElementById('footer-wrap').style.removeProperty('display');
+
+  document.getElementById('reports-table').innerHTML = `
+    <div class="table-wrap" style="border:none;border-radius:0">
+      <table>
+        <thead><tr>
+          <th>Rapport</th><th>Lignes</th><th>Colonnes</th><th>Taille</th><th>Généré le</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${items.map(it => {
+            const name = it.details?.filename || it.filename || 'rapport.xlsx';
+            const rid = reportIdOf(it);
+            return `
+            <tr>
+              <td>
+                <div style="display:flex;align-items:center;gap:.625rem">
+                  <div class="f-icon" style="width:32px;height:32px;background:var(--success-light);flex-shrink:0">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  </div>
+                  <span class="td-main truncate" style="max-width:340px">${name}</span>
+                </div>
+              </td>
+              <td class="text-sm text-sec">${it.details?.total_rows ?? '—'}</td>
+              <td class="text-sm text-sec">${it.details?.total_columns ?? '—'}</td>
+              <td class="text-sm text-sec">${fmtSize(it.file_size)}</td>
+              <td class="text-sm text-muted">${fmtDate(it.created_at)}</td>
+              <td>
+                <div style="display:flex;gap:.375rem;align-items:center;justify-content:flex-end">
+                  ${rid ? `
+                  <button class="btn btn-primary btn-icon" title="Télécharger" aria-label="Télécharger" onclick="downloadReport('${rid}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  </button>
+                  <button class="btn btn-secondary btn-icon" title="Renommer" aria-label="Renommer" onclick="renameReport('${rid}', '${name.replace(/'/g, "\\'")}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button class="btn btn-danger btn-icon" title="Supprimer" aria-label="Supprimer" onclick="deleteReport('${rid}', '${name.replace(/'/g, "\\'")}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </button>` : '<span class="text-xs text-muted">indisponible</span>'}
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderPagination(data) {
+  document.getElementById('page-info').textContent =
+    data.pages > 1 ? `Page ${data.page} / ${data.pages}` : '';
+  const pg = document.getElementById('pagination');
+  if (data.pages <= 1) { pg.innerHTML = ''; return; }
+  let html = `<button class="page-btn" ${data.page <= 1 ? 'disabled' : ''} onclick="loadReports(${data.page - 1})">‹</button>`;
+  const s = Math.max(1, data.page - 2), e = Math.min(data.pages, data.page + 2);
+  for (let i = s; i <= e; i++) {
+    html += `<button class="page-btn${i === data.page ? ' active' : ''}" onclick="loadReports(${i})">${i}</button>`;
+  }
+  html += `<button class="page-btn" ${data.page >= data.pages ? 'disabled' : ''} onclick="loadReports(${data.page + 1})">›</button>`;
+  pg.innerHTML = html;
+}
+
+function downloadReport(reportId) {
+  const url = `${API}/generate/${reportId}/download?token=${Auth.token()}`;
+  const a = document.createElement('a');
+  a.href = url; a.download = '';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+async function renameReport(reportId, currentName = '') {
+  const newName = prompt('Nouveau nom du rapport :', currentName);
+  if (newName === null) return;                       // annulé
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed === currentName) return;    // vide ou inchangé
+  try {
+    const res = await apiJSON(`/generate/${reportId}`, {
+      method: 'PATCH',
+      json: { filename: trimmed },
+    });
+    Toast.success(`Rapport renommé en « ${res.filename} »`);
+    loadReports(st.page);
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+
+async function deleteReport(reportId, name = '') {
+  if (!confirm(`Supprimer définitivement ce rapport${name ? ` (${name})` : ''} ?`)) return;
+  try {
+    await apiJSON(`/generate/${reportId}`, { method: 'DELETE' });
+    Toast.success('Rapport supprimé');
+    loadReports(st.page);
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+</script>
+</body>
+</html>

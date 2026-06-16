@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historique — Reporting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+<div id="toasts"></div>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="container">
+    <a href="index.html" class="nav-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      Reporting
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload
+      </a>
+      <a href="reports.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Mes rapports
+      </a>
+      <a href="history.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 1 .5 4M3 21v-6h6"/></svg>
+        Historique
+      </a>
+      <a href="profile.html" class="nav-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Profil
+      </a>
+      <a href="admin.html" id="nav-admin" class="nav-link" style="display:none">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Admin
+      </a>
+    </div>
+    <div class="nav-right">
+      <div class="nav-user">
+        <div class="avatar" id="nav-avatar">?</div>
+        <div>
+          <div class="nav-username" id="nav-name">—</div>
+          <div class="nav-role" id="nav-role"></div>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Déconnexion
+      </button>
+    </div>
+  </div>
+</nav>
+
+<main class="page-main">
+<div class="container">
+
+  <div class="page-header flex items-center justify-between" style="flex-wrap:wrap;gap:.75rem">
+    <div>
+      <h1>Historique</h1>
+      <p>Journal de toutes les actions effectuées.</p>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-secondary btn-sm" onclick="loadHistory()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.97"/></svg>
+        Actualiser
+      </button>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="filters">
+    <select id="f-days" class="form-control" style="max-width:140px" onchange="loadHistory()">
+      <option value="7">7 derniers jours</option>
+      <option value="30" selected>30 derniers jours</option>
+      <option value="90">90 derniers jours</option>
+      <option value="365">1 an</option>
+    </select>
+    <select id="f-action" class="form-control" style="max-width:150px" onchange="loadHistory()">
+      <option value="">Toutes les actions</option>
+      <option value="upload">Upload</option>
+      <option value="analyze">Analyse</option>
+      <option value="generate">Génération</option>
+      <option value="email">Email</option>
+    </select>
+    <select id="f-status" class="form-control" style="max-width:150px" onchange="loadHistory()">
+      <option value="">Tous les statuts</option>
+      <option value="success">Succès</option>
+      <option value="failed">Échec</option>
+      <option value="pending">En attente</option>
+    </select>
+    <input id="f-search" type="text" class="form-control" style="max-width:220px"
+           placeholder="Rechercher un fichier…"
+           oninput="debounceLoad()">
+    <button class="btn btn-ghost btn-sm" onclick="resetFilters()">Réinitialiser</button>
+    <span class="text-sm text-muted" id="total-label" style="margin-left:auto"></span>
+  </div>
+
+  <!-- LIST -->
+  <div id="hist-list">
+    <div class="spinner-center"><div class="spinner spinner-lg"></div></div>
+  </div>
+
+  <!-- PAGINATION -->
+  <div class="flex items-center justify-between mt-4" id="pagination-wrap" style="display:none!important">
+    <span class="text-sm text-muted" id="page-info"></span>
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+</div>
+</main>
+
+<!-- MODAL: history detail -->
+<div class="modal-back hidden" id="detail-modal">
+  <div class="modal modal-lg">
+    <div class="modal-head">
+      <span class="modal-title" id="detail-title">Détails</span>
+      <button class="modal-x" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="detail-body"></div>
+    <div class="modal-foot" id="detail-foot"></div>
+  </div>
+</div>
+
+<script>
+const histState = { page: 1, total: 0, pages: 1, items: [], debounce: null };
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (!requireAuth()) return;
+  initNav();
+  loadHistory();
+});
+
+function debounceLoad() {
+  clearTimeout(histState.debounce);
+  histState.debounce = setTimeout(loadHistory, 400);
+}
+
+function resetFilters() {
+  document.getElementById('f-days').value   = '30';
+  document.getElementById('f-action').value = '';
+  document.getElementById('f-status').value = '';
+  document.getElementById('f-search').value = '';
+  loadHistory();
+}
+
+async function loadHistory(page = 1) {
+  histState.page = page;
+  document.getElementById('hist-list').innerHTML =
+    '<div class="spinner-center"><div class="spinner spinner-lg"></div></div>';
+  document.getElementById('pagination-wrap').style.display = 'none';
+
+  const params = new URLSearchParams({
+    page,
+    limit: 20,
+    days:  document.getElementById('f-days').value,
+  });
+  const action = document.getElementById('f-action').value;
+  const status = document.getElementById('f-status').value;
+  const search = document.getElementById('f-search').value.trim();
+  if (action) params.set('action', action);
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+
+  try {
+    const data = await apiJSON(`/history/?${params}`);
+    if (!data) return;
+    histState.total = data.total;
+    histState.pages = data.pages || Math.ceil(data.total / 20) || 1;
+    histState.items = data.items || [];
+    renderList(histState.items);
+    renderPagination();
+    document.getElementById('total-label').textContent =
+      data.total ? `${data.total} résultat${data.total > 1 ? 's' : ''}` : '';
+  } catch (err) {
+    document.getElementById('hist-list').innerHTML =
+      `<div class="alert alert-danger">${err.message}</div>`;
+  }
+}
+
+/* ===== ACTION ICONS ===== */
+const actionIcon = {
+  upload: { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`, bg: '#eff6ff', color: '#2563eb' },
+  analyze:{ svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`, bg: '#cffafe', color: '#0891b2' },
+  generate:{svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`, bg: '#dbeafe', color: '#2563eb' },
+  email:  { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`, bg: '#dcfce7', color: '#16a34a' },
+};
+
+function renderList(items) {
+  if (!items.length) {
+    document.getElementById('hist-list').innerHTML = `
+      <div class="empty">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        <h3>Aucun résultat</h3>
+        <p>Modifiez vos filtres ou réalisez une action.</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('hist-list').innerHTML =
+    `<div style="display:flex;flex-direction:column;gap:.625rem">` +
+    items.map(item => {
+      const ic = actionIcon[item.action] || actionIcon.upload;
+      const name = item.original_filename || item.details?.filename || '—';
+      const rid = reportIdOf(item);
+      const canDownload = rid && item.status === 'success';
+      return `
+      <div class="hist-item" onclick="showDetail('${item.id}')">
+        <div class="hist-icon" style="background:${ic.bg};color:${ic.color}">${ic.svg}</div>
+        <div class="hist-main min-w-0">
+          <div class="hist-name truncate">${name}</div>
+          <div class="hist-sub">
+            ${actionBadge(item.action)}
+            ${item.details?.total_columns ? `· ${item.details.total_columns} col.` : ''}
+            ${item.details?.total_rows    ? `· ${item.details.total_rows} lignes` : ''}
+          </div>
+        </div>
+        <div class="hist-right">
+          ${statusBadge(item.status)}
+          <span class="text-xs text-muted">${fmtRelative(item.created_at)}</span>
+          ${item.processing_time_ms ? `<span class="text-xs text-muted">${item.processing_time_ms}ms</span>` : ''}
+        </div>
+        <div class="hist-actions" style="display:flex;gap:.375rem;align-items:center">
+          ${canDownload ? `
+          <button class="btn btn-secondary btn-icon" title="Télécharger le rapport" aria-label="Télécharger"
+                  onclick="event.stopPropagation(); downloadReport('${rid}')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>` : ''}
+          <button class="btn btn-danger btn-icon" title="Supprimer" aria-label="Supprimer"
+                  onclick="event.stopPropagation(); deleteHistory('${item.id}', '${name.replace(/'/g, "\\'")}')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </button>
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+/* report_id peut être au niveau racine ou dans details (selon l'action) */
+function reportIdOf(item) {
+  return item.report_id || item.details?.report_id || null;
+}
+
+/* Télécharge un rapport généré sans quitter la page */
+function downloadReport(reportId) {
+  const url = `${API}/generate/${reportId}/download?token=${Auth.token()}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/* Supprime une entrée d'historique */
+async function deleteHistory(id, name = '') {
+  if (!confirm(`Supprimer définitivement cette entrée${name ? ` (${name})` : ''} ?`)) return;
+  try {
+    await apiJSON(`/history/${id}`, { method: 'DELETE' });
+    Toast.success('Entrée supprimée');
+    loadHistory(histState.page);
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+
+function renderPagination() {
+  const wrap = document.getElementById('pagination-wrap');
+  if (histState.pages <= 1) { wrap.style.display = 'none'; return; }
+  wrap.style.removeProperty('display');
+
+  document.getElementById('page-info').textContent =
+    `Page ${histState.page} / ${histState.pages}`;
+
+  const pg = document.getElementById('pagination');
+  let html = `<button class="page-btn" ${histState.page === 1 ? 'disabled' : ''}
+    onclick="loadHistory(${histState.page - 1})">‹</button>`;
+
+  const start = Math.max(1, histState.page - 2);
+  const end   = Math.min(histState.pages, histState.page + 2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="page-btn${i === histState.page ? ' active' : ''}"
+      onclick="loadHistory(${i})">${i}</button>`;
+  }
+  html += `<button class="page-btn" ${histState.page >= histState.pages ? 'disabled' : ''}
+    onclick="loadHistory(${histState.page + 1})">›</button>`;
+  pg.innerHTML = html;
+}
+
+/* ===== DETAIL MODAL ===== */
+async function showDetail(id) {
+  const item = histState.items.find(i => i.id === id);
+  if (!item) return;
+
+  const ic = actionIcon[item.action] || actionIcon.upload;
+  const name = item.original_filename || item.details?.filename || '—';
+
+  let body = `
+    <div class="file-strip" style="margin-bottom:1.25rem">
+      <div class="f-icon" style="background:${ic.bg}">
+        <span style="color:${ic.color}">${ic.svg}</span>
+      </div>
+      <div class="f-info min-w-0">
+        <div class="f-name truncate">${name}</div>
+        <div class="f-meta">
+          ${actionBadge(item.action)} ${statusBadge(item.status)}
+          ${item.processing_time_ms ? `· ${item.processing_time_ms}ms` : ''}
+        </div>
+      </div>
+    </div>`;
+
+  if (item.error_message) {
+    body += `<div class="alert alert-danger" style="margin-bottom:1rem">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      ${item.error_message}</div>`;
+  }
+
+  if (item.details && Object.keys(item.details).length) {
+    body += `<div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><span class="card-title">Détails</span></div>
+      <div class="card-body" style="padding:.875rem 1.25rem">
+        <table style="width:100%;font-size:.875rem;border-collapse:collapse">
+          ${Object.entries(item.details).map(([k,v]) =>
+            `<tr><td style="padding:.375rem 0;color:var(--text-muted);width:45%">${k}</td>
+                 <td style="padding:.375rem 0;font-weight:500">${v ?? '—'}</td></tr>`
+          ).join('')}
+        </table>
+      </div>
+    </div>`;
+  }
+
+  body += `<div class="flex items-center justify-between" style="font-size:.8125rem;color:var(--text-muted)">
+    <span>ID : <code style="background:var(--bg);padding:.1rem .35rem;border-radius:4px">${item.id}</code></span>
+    <span>${fmtDate(item.created_at)}</span>
+  </div>`;
+
+  document.getElementById('detail-title').textContent = name;
+  document.getElementById('detail-body').innerHTML = body;
+
+  // Footer : bouton de téléchargement si un rapport est associé
+  const foot = document.getElementById('detail-foot');
+  const rid = reportIdOf(item);
+  if (rid && item.status === 'success') {
+    foot.innerHTML = `
+      <button class="btn btn-secondary" onclick="closeModal()">Fermer</button>
+      <button class="btn btn-primary" onclick="downloadReport('${rid}')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Télécharger
+      </button>`;
+  } else {
+    foot.innerHTML = `<button class="btn btn-secondary" onclick="closeModal()">Fermer</button>`;
+  }
+
+  document.getElementById('detail-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.add('hidden');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.getElementById('detail-modal')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('detail-modal')) closeModal();
+});
+</script>
+</body>
+</html>
