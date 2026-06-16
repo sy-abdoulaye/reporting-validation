@@ -1,0 +1,68 @@
+services:
+  # ===== Base de données PostgreSQL =====
+  db:
+    image: registry.example.com/dockerhub/library/postgres:16-alpine
+    container_name: reporting-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: reporting
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # 5433 sur l'hôte pour éviter tout conflit avec un Postgres local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reporting"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ===== API Backend (FastAPI) =====
+  backend:
+    build:
+      context: ./backend
+      network: host
+      args:
+        http_proxy: ${http_proxy}
+        https_proxy: ${https_proxy}
+        no_proxy: ${no_proxy}
+    container_name: reporting-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/reporting
+      SECRET_KEY: GENERATE_A_NEW_SECRET_KEY_DO_NOT_USE_THIS_ONE
+      SMTP_HOST: "203.0.113.35"
+      SMTP_PORT: "25"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_TLS: "false"
+      EMAIL_FROM: reporting@example.com
+      EMAIL_FROM_NAME: Reporting App
+      FRONTEND_URL: http://203.0.113.141:8080
+    volumes:
+      # Persiste les fichiers uploadés et générés
+      - uploads:/app/data/uploads
+      - reports:/app/data/reports
+    ports:
+      - "8000:8000"
+
+  # ===== Frontend (nginx) =====
+  frontend:
+    build:
+      context: ./frontend
+      network: host
+    container_name: reporting-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
+  uploads:
+  reports:
