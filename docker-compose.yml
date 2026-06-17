@@ -62,6 +62,37 @@ services:
     ports:
       - "8080:80"
 
+  # ===== Sauvegardes automatiques de la base =====
+  db-backup:
+    image: registry.example.com/dockerhub/library/postgres:16-alpine
+    container_name: reporting-db-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Connexion à la base (réutilise les identifiants du service db)
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: reporting
+      # Planification
+      BACKUP_INTERVAL_HOURS: "24" # une sauvegarde par jour
+      RUN_ON_START: "true" # + une sauvegarde au démarrage
+      # Politique de rétention (grandfather-father-son)
+      RETENTION_DAILY: "7" # 7 jours de sauvegardes quotidiennes
+      RETENTION_WEEKLY: "4" # 4 semaines de copies hebdomadaires
+      RETENTION_MONTHLY: "6" # 6 mois de copies mensuelles
+      WEEKLY_DOW: "7" # copie hebdo le dimanche (1=lundi..7=dimanche)
+      MONTHLY_DOM: "01" # copie mensuelle le 1er du mois
+    volumes:
+      # Stockage des sauvegardes : bind-mount hôte, distinct du conteneur db
+      - ./backups:/backups
+      # Scripts (lecture seule)
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/db_backup_loop.sh"]
+
 volumes:
   pgdata:
   uploads:

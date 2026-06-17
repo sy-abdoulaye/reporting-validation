@@ -6,7 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import engine, Base
-from app.models import excel, report, history, user# Import pour enregistrer les modèles
+from app.models import excel, report, history, user, audit  # Import pour enregistrer les modèles
 
 def init_db():
     """Crée toutes les tables"""

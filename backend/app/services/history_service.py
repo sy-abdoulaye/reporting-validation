@@ -89,6 +89,14 @@ class HistoryService:
             desc(ProcessingHistory.created_at)
         ).offset((page - 1) * limit).limit(limit).all()
 
+        # Récupérer les noms des propriétaires en une seule requête (évite le N+1)
+        from app.models.user import User
+        owner_ids = {item.user_id for item in items if item.user_id}
+        owners = {}
+        if owner_ids:
+            for u in self.db.query(User).filter(User.id.in_(owner_ids)).all():
+                owners[u.id] = u.full_name or u.username
+
         # Enrichir avec les données associées
         enriched_items = []
         for item in items:
@@ -96,6 +104,8 @@ class HistoryService:
                 "id": str(item.id),
                 "file_id": str(item.file_id),
                 "report_id": str(item.report_id) if item.report_id else None,
+                "user_id": str(item.user_id) if item.user_id else None,
+                "username": owners.get(item.user_id),
                 "filename": item.original_filename,
                 "action": item.action,
                 "status": item.status,

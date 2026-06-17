@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, validator
 from sqlalchemy.orm import Session
@@ -12,9 +12,19 @@ from app.core.security import SecurityService
 from app.core.auth import AuthDependencies
 from app.core.config import settings
 from app.models.user import User, ApiKey
-from app.services.history_service import HistoryService
+from app.services.audit_service import AuditService
 from app.services.email_service import EmailService
 import os
+
+
+def _client_ip(request: Optional[Request]) -> Optional[str]:
+    """IP du client en tenant compte d'un éventuel reverse-proxy (X-Forwarded-For)."""
+    if request is None:
+        return None
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -109,6 +119,7 @@ class ApiKeyCreate(BaseModel):
 @router.post("/register", response_model=UserResponse)
 async def register(
     user_data: UserCreate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Inscription d'un nouvel utilisateur"""
@@ -144,23 +155,32 @@ async def register(
     db.commit()
     db.refresh(user)
 
-    # Enregistrer l'action dans l'historique
-    history_service = HistoryService(db)
-    history_service.log_action(
-        file_id=user.id,  # Utiliser l'ID utilisateur comme référence
+    # Journal d'audit
+    AuditService(db).log(
         action="register",
+        category="auth",
         status="success",
-        details={"username": user.username, "email": user.email}
+        user=user,
+        target_type="user",
+        target_id=user.id,
+        target_label=user.username,
+        description=f"Inscription de l'utilisateur {user.username}",
+        details={"username": user.username, "email": user.email},
+        ip_address=_client_ip(request),
     )
 
     return user
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
     """Connexion utilisateur"""
+
+    audit = AuditService(db)
+    ip = _client_ip(request)
 
     # Chercher l'utilisateur par email ou username
     user = db.query(User).filter(
@@ -168,6 +188,13 @@ async def login(
     ).first()
 
     if not user:
+        audit.log(
+            action="login_failed", category="auth", status="failed",
+            username=form_data.username,
+            description=f"Échec de connexion : identifiant inconnu ({form_data.username})",
+            details={"reason": "unknown_user", "attempted": form_data.username},
+            ip_address=ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email/Utilisateur ou mot de passe incorrect",
@@ -177,6 +204,11 @@ async def login(
     # Vérifier si le compte est verrouillé
     if user.locked_until and user.locked_until > datetime.utcnow():
         remaining = (user.locked_until - datetime.utcnow()).seconds // 60
+        audit.log(
+            action="login_failed", category="auth", status="failed",
+            user=user, description=f"Échec de connexion : compte verrouillé ({user.username})",
+            details={"reason": "locked", "remaining_minutes": remaining}, ip_address=ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Compte verrouillé pour {remaining} minutes"
@@ -188,6 +220,11 @@ async def login(
         db.commit()
 
         remaining = 5 - user.failed_login_attempts
+        audit.log(
+            action="login_failed", category="auth", status="failed",
+            user=user, description=f"Échec de connexion : mot de passe incorrect ({user.username})",
+            details={"reason": "bad_password", "remaining_attempts": remaining}, ip_address=ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Mot de passe incorrect. {remaining} tentative(s) restante(s)"
@@ -206,13 +243,11 @@ async def login(
         data={"sub": str(user.id)}
     )
 
-    # Enregistrer la connexion
-    history_service = HistoryService(db)
-    history_service.log_action(
-        file_id=user.id,  # Utiliser l'ID utilisateur comme référence
-        action="login",
-        status="success",
-        details={"username": user.username}
+    # Journal d'audit
+    audit.log(
+        action="login", category="auth", status="success", user=user,
+        description=f"Connexion de {user.username}",
+        details={"username": user.username}, ip_address=ip,
     )
 
     return {
@@ -273,18 +308,16 @@ async def refresh_token(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     current_user: User = Depends(AuthDependencies.get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Déconnexion (invalide le token côté client)"""
-    # Le token JWT est stateless, on ne fait rien côté serveur
-    # On peut juste loguer l'action
-    history_service = HistoryService(db)
-    history_service.log_action(
-        file_id=current_user.id,
-        action="logout",
-        status="success",
-        details={"username": current_user.username}
+    # Le token JWT est stateless, on ne fait rien côté serveur — on journalise l'action
+    AuditService(db).log(
+        action="logout", category="auth", status="success", user=current_user,
+        description=f"Déconnexion de {current_user.username}",
+        details={"username": current_user.username}, ip_address=_client_ip(request),
     )
 
     return {"message": "Déconnexion réussie"}

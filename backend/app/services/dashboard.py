@@ -164,33 +164,51 @@ class DashboardService:
         ).join(
             ProcessingHistory, ProcessingHistory.user_id == User.id, isouter=True
         ).group_by(
-            User.id
+            # PostgreSQL exige toutes les colonnes non agrégées dans le GROUP BY
+            User.id, User.username, User.email, User.full_name
         ).order_by(
             desc('total_actions')
         ).limit(limit).all()
 
         result = []
         for user in top_users:
-            # Récupérer les détails supplémentaires
-            file_count = self.db.query(ExcelFile).filter(
-                ExcelFile.user_id == user.id
-            ).count()
-
-            report_count = self.db.query(Report).filter(
-                Report.user_id == user.id
-            ).count()
-
+            # Les fichiers/rapports ne sont pas liés à l'utilisateur par clé étrangère :
+            # on dérive les compteurs depuis l'historique de traitement.
+            counts = self._user_activity_counts(user.id)
             result.append({
                 "id": str(user.id),
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
                 "total_actions": user.total_actions or 0,
-                "file_count": file_count,
-                "report_count": report_count
+                "file_count": counts["file_count"],
+                "report_count": counts["report_count"],
             })
 
         return result
+
+    def _user_activity_counts(self, user_id: UUID) -> Dict[str, int]:
+        """Compteurs d'activité dérivés de l'historique (pas de FK user sur les fichiers)."""
+        actions_count = self.db.query(ProcessingHistory).filter(
+            ProcessingHistory.user_id == user_id
+        ).count()
+        file_count = self.db.query(
+            func.count(func.distinct(ProcessingHistory.file_id))
+        ).filter(
+            ProcessingHistory.user_id == user_id,
+            ProcessingHistory.action == "upload",
+        ).scalar() or 0
+        report_count = self.db.query(
+            func.count(func.distinct(ProcessingHistory.report_id))
+        ).filter(
+            ProcessingHistory.user_id == user_id,
+            ProcessingHistory.report_id.isnot(None),
+        ).scalar() or 0
+        return {
+            "actions_count": actions_count,
+            "file_count": file_count,
+            "report_count": report_count,
+        }
 
     async def get_recent_activity(self, limit: int = 20) -> List[Dict[str, Any]]:
         """ Activité récente (fichiers uploadés, traitements)"""
@@ -218,15 +236,26 @@ class DashboardService:
 
         return result
 
+    # Champs autorisés pour le tri de la liste des utilisateurs
+    USER_SORT_FIELDS = {
+        "created_at": User.created_at,
+        "username": User.username,
+        "email": User.email,
+        "last_login": User.last_login,
+        "full_name": User.full_name,
+    }
+
     async def get_user_list(
         self,
         page: int = 1,
         limit: int = 20,
         search: Optional[str] = None,
         is_active: Optional[bool] = None,
-        is_superuser: Optional[bool] = None
+        is_superuser: Optional[bool] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
-        """Liste des utilisateurs avec pagination et filtres"""
+        """Liste des utilisateurs avec pagination, filtres et tri"""
 
         query = self.db.query(User)
 
@@ -244,36 +273,68 @@ class DashboardService:
             query = query.filter(User.is_superuser == is_superuser)
 
         total = query.count()
-        users = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
 
-        # Enrichir avec des statistiques
+        # Tri sécurisé
+        column = self.USER_SORT_FIELDS.get(sort_by, User.created_at)
+        column = column.asc() if sort_order == "asc" else column.desc()
+        users = query.order_by(column).offset((page - 1) * limit).limit(limit).all()
+
+        # Enrichir avec des statistiques (dérivées de l'historique)
         users_data = []
         for user in users:
-            # Compter les actions
-            actions_count = self.db.query(ProcessingHistory).filter(
-                ProcessingHistory.user_id == user.id
-            ).count()
-
-            # Dernière activité
+            counts = self._user_activity_counts(user.id)
             last_activity = self.db.query(ProcessingHistory).filter(
                 ProcessingHistory.user_id == user.id
             ).order_by(desc(ProcessingHistory.created_at)).first()
 
             user_dict = user.to_dict()
             user_dict.update({
-                "actions_count": actions_count,
+                "is_active": user.is_active,
+                "actions_count": counts["actions_count"],
                 "last_activity": last_activity.created_at.isoformat() if last_activity else None,
-                "file_count": self.db.query(ExcelFile).filter(ExcelFile.user_id == user.id).count(),
-                "report_count": self.db.query(Report).filter(Report.user_id == user.id).count()
+                "file_count": counts["file_count"],
+                "report_count": counts["report_count"],
             })
             users_data.append(user_dict)
 
         return {
             "total": total,
             "page": page,
-            "pages": (total + limit - 1) // limit,
+            "pages": (total + limit - 1) // limit if total else 1,
             "items": users_data
         }
+
+    async def get_user_detail(self, user_id: UUID) -> Dict[str, Any]:
+        """Détails complets d'un utilisateur pour l'administration"""
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError("Utilisateur non trouvé")
+
+        counts = self._user_activity_counts(user.id)
+        last_activity = self.db.query(ProcessingHistory).filter(
+            ProcessingHistory.user_id == user.id
+        ).order_by(desc(ProcessingHistory.created_at)).first()
+
+        # Répartition des actions de traitement
+        by_action_rows = self.db.query(
+            ProcessingHistory.action, func.count(ProcessingHistory.id)
+        ).filter(ProcessingHistory.user_id == user.id).group_by(ProcessingHistory.action).all()
+
+        data = user.to_dict()
+        data.update({
+            "is_active": user.is_active,
+            "phone": user.phone,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "failed_login_attempts": user.failed_login_attempts,
+            "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+            "actions_count": counts["actions_count"],
+            "file_count": counts["file_count"],
+            "report_count": counts["report_count"],
+            "last_activity": last_activity.created_at.isoformat() if last_activity else None,
+            "by_action": {action: count for action, count in by_action_rows},
+        })
+        return data
 
     async def update_user(
         self,
@@ -310,18 +371,10 @@ class DashboardService:
         if not user:
             return False
 
-        # Supprimer les fichiers associés
-        files = self.db.query(ExcelFile).filter(ExcelFile.user_id == user_id).all()
-        for file in files:
-            # Supprimer les rapports
-            self.db.query(Report).filter(Report.source_file_id == file.id).delete()
-
-        self.db.query(ExcelFile).filter(ExcelFile.user_id == user_id).delete()
-
-        # Supprimer l'historique
+        # Les fichiers (ExcelFile) et rapports (Report) ne sont pas liés à l'utilisateur
+        # par clé étrangère ; on nettoie ce qui l'est réellement : historique et clés API.
+        # Le journal d'audit est conservé (avec le nom dénormalisé) à des fins de traçabilité.
         self.db.query(ProcessingHistory).filter(ProcessingHistory.user_id == user_id).delete()
-
-        # Supprimer les clés API
         self.db.query(ApiKey).filter(ApiKey.user_id == user_id).delete()
 
         # Supprimer l'utilisateur

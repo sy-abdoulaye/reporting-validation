@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
+from uuid import UUID
 from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.core.auth import AuthDependencies
@@ -18,11 +19,15 @@ async def get_history(
     action: Optional[str] = Query(None, regex="^(upload|analyze|generate|email)$"),
     search: Optional[str] = None,
     days: Optional[int] = Query(None, ge=1, le=365),
+    user_id: Optional[UUID] = Query(None, description="Filtrer par utilisateur (admin uniquement)"),
     current_user: User = Depends(AuthDependencies.get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Récupère l'historique des traitements
+    Récupère l'historique des traitements.
+
+    - Un utilisateur standard ne voit que ses propres entrées.
+    - Un administrateur voit toutes les entrées et peut filtrer par `user_id`.
     """
     service = HistoryService(db)
 
@@ -31,10 +36,11 @@ async def get_history(
     if days:
         date_from = datetime.utcnow() - timedelta(days=days)
 
-    # Filtrer par utilisateur (si non-admin, voir uniquement ses propres fichiers)
-    user_id = None
-    if not current_user.is_superuser:
-        user_id = current_user.id
+    # Portée : non-admin restreint à ses entrées ; admin = tout, avec filtre optionnel
+    if current_user.is_superuser:
+        effective_user_id = user_id
+    else:
+        effective_user_id = current_user.id
 
     result = service.get_history(
         page=page,
@@ -43,7 +49,7 @@ async def get_history(
         action=action,
         search=search,
         date_from=date_from,
-        user_id=user_id
+        user_id=effective_user_id
     )
 
     return result

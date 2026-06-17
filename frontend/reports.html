@@ -86,6 +86,10 @@
       <option value="90" selected>90 derniers jours</option>
       <option value="365">1 an</option>
     </select>
+    <!-- Sélecteur d'utilisateur (admin uniquement) -->
+    <select id="f-user" class="form-control" style="max-width:220px;display:none" onchange="loadReports()">
+      <option value="">Tous les utilisateurs</option>
+    </select>
     <input id="f-search" type="text" class="form-control" style="max-width:260px"
            placeholder="Rechercher un rapport…" oninput="debounceLoad()">
     <span class="text-sm text-muted" id="total-label" style="margin-left:auto"></span>
@@ -108,13 +112,33 @@
 </main>
 
 <script>
-const st = { page: 1, pages: 1, debounce: null };
+const st = { page: 1, pages: 1, debounce: null, isAdmin: false };
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!requireAuth()) return;
   initNav();
+  st.isAdmin = Auth.superuser();
+  if (st.isAdmin) initAdminView();
   loadReports();
 });
+
+/* Vue admin : sélecteur d'utilisateur + libellés adaptés */
+async function initAdminView() {
+  document.querySelector('.page-header h1').textContent = 'Rapports';
+  document.querySelector('.page-header p').textContent =
+    'Consultez les rapports générés, par utilisateur.';
+  const sel = document.getElementById('f-user');
+  sel.style.display = '';
+  try {
+    const data = await apiJSON('/admin/users?limit=100&sort_by=username&sort_order=asc');
+    (data.items || []).forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = `${u.full_name || u.username} (@${u.username})`;
+      sel.appendChild(opt);
+    });
+  } catch (err) { Toast.error('Utilisateurs : ' + err.message); }
+}
 
 function debounceLoad() {
   clearTimeout(st.debounce);
@@ -138,6 +162,11 @@ async function loadReports(page = 1) {
   });
   const search = document.getElementById('f-search').value.trim();
   if (search) params.set('search', search);
+  // Filtre par utilisateur (admin) : si un utilisateur précis est sélectionné
+  if (st.isAdmin) {
+    const uid = document.getElementById('f-user').value;
+    if (uid) params.set('user_id', uid);
+  }
 
   try {
     const data = await apiJSON(`/history/?${params}`);
@@ -166,11 +195,12 @@ function renderTable(items) {
   }
   document.getElementById('footer-wrap').style.removeProperty('display');
 
+  const adminCol = st.isAdmin;
   document.getElementById('reports-table').innerHTML = `
     <div class="table-wrap" style="border:none;border-radius:0">
       <table>
         <thead><tr>
-          <th>Rapport</th><th>Lignes</th><th>Colonnes</th><th>Taille</th><th>Généré le</th><th></th>
+          <th>Rapport</th>${adminCol ? '<th>Utilisateur</th>' : ''}<th>Lignes</th><th>Colonnes</th><th>Taille</th><th>Généré le</th><th></th>
         </tr></thead>
         <tbody>
           ${items.map(it => {
@@ -186,6 +216,7 @@ function renderTable(items) {
                   <span class="td-main truncate" style="max-width:340px">${name}</span>
                 </div>
               </td>
+              ${adminCol ? `<td class="text-sm text-sec">${(it.username || '—')}</td>` : ''}
               <td class="text-sm text-sec">${it.details?.total_rows ?? '—'}</td>
               <td class="text-sm text-sec">${it.details?.total_columns ?? '—'}</td>
               <td class="text-sm text-sec">${fmtSize(it.file_size)}</td>

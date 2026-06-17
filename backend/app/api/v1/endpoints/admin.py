@@ -1,5 +1,6 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Optional
 from uuid import UUID
@@ -7,6 +8,17 @@ from app.core.database import get_db
 from app.core.auth import AuthDependencies
 from app.models.user import User
 from app.services.dashboard import DashboardService
+from app.services.audit_service import AuditService
+
+
+def _client_ip(request: Optional[Request]) -> Optional[str]:
+    if request is None:
+        return None
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else None
+
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -27,18 +39,18 @@ async def get_system_stats(
     service = DashboardService(db)
     return await service.get_system_stats(days)
 
-@router.get("/dashboard/users")
+@router.get("/dashboard/charts")
 async def get_activity_charts(
     days: int = 30,
     current_user: User = AdminDependency,
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint pour récupérer les données d'activité des utilisateurs (nombre de fichiers uploadés, rapports générés, etc.)
+    Endpoint pour récupérer les données d'activité (graphiques) sur la période.
     Accessible uniquement aux superusers.
     """
     service = DashboardService(db)
-    return await service.get_activity_charts(days)
+    return await service.get_activity_chart(days)
 
 @router.get("/dashboard/top-users")
 async def get_top_users(
@@ -73,22 +85,41 @@ async def list_users(
     search: Optional[str] = None,
     is_active: Optional[bool] = None,
     is_superuser: Optional[bool] = None,
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
     current_user: User = AdminDependency,
     db: Session = Depends(get_db)
 ):
-    """Liste des utilisateurs"""
+    """Liste des utilisateurs (recherche, filtres, tri, pagination)"""
     service = DashboardService(db)
     return await service.get_user_list(
         page=page,
         limit=limit,
         search=search,
         is_active=is_active,
-        is_superuser=is_superuser
+        is_superuser=is_superuser,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
+
+@router.get("/users/{user_id}")
+async def get_user_detail(
+    user_id: UUID,
+    current_user: User = AdminDependency,
+    db: Session = Depends(get_db)
+):
+    """Détails d'un utilisateur et ses informations pertinentes"""
+    service = DashboardService(db)
+    try:
+        return await service.get_user_detail(user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @router.put("/users/{user_id}")
 async def update_user(
     user_id: UUID,
+    request: Request,
     is_active: Optional[bool] = None,
     is_superuser: Optional[bool] = None,
     department: Optional[str] = None,
@@ -96,7 +127,7 @@ async def update_user(
     current_user: User = AdminDependency,
     db: Session = Depends(get_db)
 ):
-    """Met à jour un utilisateur"""
+    """Met à jour un utilisateur (statut, rôle, service, poste)"""
     service = DashboardService(db)
 
     try:
@@ -107,52 +138,54 @@ async def update_user(
             department=department,
             job_title=job_title
         )
-        return updated_user
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-@router.put("/users/{user_id}")
-async def update_user(
-    user_id: UUID,
-    is_active: Optional[bool] = None,
-    is_superuser: Optional[bool] = None,
-    department: Optional[str] = None,
-    job_title: Optional[str] = None,
-    current_user: User = AdminDependency,
-    db: Session = Depends(get_db)
-):
-    """Met à jour un utilisateur"""
-    service = DashboardService(db)
-
-    try:
-        updated_user = await service.update_user(
-            user_id=user_id,
-            is_active=is_active,
-            is_superuser=is_superuser,
-            department=department,
-            job_title=job_title
-        )
-        return updated_user
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    # Journal d'audit : ne consigner que les champs réellement transmis
+    changes = {
+        k: v for k, v in {
+            "is_active": is_active, "is_superuser": is_superuser,
+            "department": department, "job_title": job_title,
+        }.items() if v is not None
+    }
+    AuditService(db).log(
+        action="user.update", category="user", status="success", user=current_user,
+        target_type="user", target_id=user_id, target_label=updated_user.get("username"),
+        description=f"Mise à jour de l'utilisateur {updated_user.get('username')}",
+        details={"changes": changes}, ip_address=_client_ip(request),
+    )
+    return updated_user
 
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: UUID,
+    request: Request,
     current_user: User = AdminDependency,
     db: Session = Depends(get_db)
 ):
-    """Supprime un utilisateur"""
+    """Supprime un utilisateur et ses données associées"""
     service = DashboardService(db)
 
     # Ne pas se supprimer soi-même
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas vous supprimer vous-même")
 
+    # Récupérer le nom avant suppression (pour l'audit)
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    target_username = target.username
+
     success = await service.delete_user(user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
 
+    AuditService(db).log(
+        action="user.delete", category="user", status="success", user=current_user,
+        target_type="user", target_id=user_id, target_label=target_username,
+        description=f"Suppression de l'utilisateur {target_username}",
+        ip_address=_client_ip(request),
+    )
     return {"message": "Utilisateur supprimé avec succès"}
 
 @router.get("/system/health")
@@ -164,7 +197,7 @@ async def system_health(
 
     # Vérifier la base de données
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception as e:
         db_status = f"error: {str(e)}"
@@ -198,3 +231,35 @@ async def system_health(
         },
         "storage_usage": storage_usage
     }
+
+
+@router.get("/audit-log")
+async def get_audit_log(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    category: Optional[str] = Query(None, regex="^(auth|user|report|system)$"),
+    action: Optional[str] = None,
+    status: Optional[str] = Query(None, regex="^(success|failed)$"),
+    search: Optional[str] = None,
+    user_id: Optional[UUID] = None,
+    days: Optional[int] = Query(None, ge=1, le=365),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    current_user: User = AdminDependency,
+    db: Session = Depends(get_db)
+):
+    """Journal d'audit : connexions, gestion des utilisateurs, actions sensibles.
+    Recherche, filtres, tri et pagination. Réservé aux administrateurs."""
+    return AuditService(db).get_logs(
+        page=page, limit=limit, category=category, action=action, status=status,
+        search=search, user_id=user_id, days=days, sort_by=sort_by, sort_order=sort_order,
+    )
+
+
+@router.get("/audit-log/actions")
+async def get_audit_actions(
+    current_user: User = AdminDependency,
+    db: Session = Depends(get_db)
+):
+    """Liste des actions distinctes présentes dans le journal (pour le filtre)."""
+    return {"actions": AuditService(db).get_distinct_actions()}
