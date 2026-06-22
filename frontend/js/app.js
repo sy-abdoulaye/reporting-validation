@@ -2,9 +2,9 @@
    app.js — Shared utilities for Reporting App
    ================================================ */
 
-// URL dynamique : suit l'hôte depuis lequel la page est servie
-// (localhost en local, 203.0.113.141 en déploiement Docker, etc.)
-const API = `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+// URL relative : l'API est servie sur la même origine via le reverse proxy nginx
+// (/api -> backend). Évite tout "mixed content" en HTTPS et fonctionne en HTTP.
+const API = `/api/v1`;
 
 /* ===== AUTH ===== */
 const Auth = {

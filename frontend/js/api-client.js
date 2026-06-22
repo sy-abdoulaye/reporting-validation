@@ -2,7 +2,9 @@
  * Client API unifié pour communiquer avec le backend FastAPI
  */
 
-const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+// URL relative : l'API est servie sur la même origine via le reverse proxy nginx
+// (/api -> backend). Évite tout "mixed content" en HTTPS et fonctionne en HTTP.
+const API_BASE_URL = `/api/v1`;
 
 class ApiClient {
     constructor() {

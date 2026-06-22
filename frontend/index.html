@@ -148,6 +148,26 @@
         </div>
       </div>
       <div class="card-body">
+        <!-- ===== Profils de colonnes ===== -->
+        <div class="profile-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1rem">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" width="16" height="16"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <label class="text-sm" style="font-weight:500">Profil :</label>
+          <select id="profile-select" class="form-control" style="max-width:240px" onchange="onProfileSelectChange()">
+            <option value="">— Sélection manuelle —</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="profile-load-btn" onclick="applySelectedProfile()" title="Charger ce profil" disabled>Charger</button>
+          <button class="btn btn-secondary btn-sm" id="profile-default-btn" onclick="setSelectedDefault()" title="Définir comme profil par défaut" disabled>★ Défaut</button>
+          <button class="btn btn-secondary btn-sm" id="profile-update-btn" onclick="updateSelectedProfileColumns()" title="Remplacer les colonnes du profil par la sélection actuelle" disabled>Mettre à jour</button>
+          <button class="btn btn-secondary btn-sm" id="profile-rename-btn" onclick="renameSelectedProfile()" title="Renommer le profil" disabled>Renommer</button>
+          <button class="btn btn-danger btn-sm" id="profile-delete-btn" onclick="deleteSelectedProfile()" title="Supprimer le profil" disabled>Supprimer</button>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="saveProfile()" title="Enregistrer la sélection actuelle comme profil">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Enregistrer
+          </button>
+        </div>
+        <!-- Messages : colonnes manquantes / chargement de profil -->
+        <div id="profile-msg" class="hidden" style="margin-bottom:1rem"></div>
+
         <p class="text-sm text-sec mb-4">
           Cochez les colonnes à inclure dans le rapport. Ajustez la largeur si nécessaire.
           <span id="col-stats" class="text-muted"></span>
@@ -317,12 +337,15 @@ window.state = {
   selection: {},       // { colName: { checked, width } }
   reportId: null,
   pollTimer: null,
+  profiles: [],        // profils de colonnes enregistrés de l'utilisateur
+  activeProfileId: null, // profil actuellement appliqué (null = sélection manuelle)
 };
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!requireAuth()) return;
   initNav();
   initDropZone();
+  loadProfiles();
 });
 
 /* ===== DROP ZONE ===== */
@@ -434,11 +457,16 @@ async function runAnalyze(fileId) {
     if (status) status.classList.add('hidden');
     const stats = document.getElementById('col-stats');
     if (stats) stats.textContent = `· ${state.columns.length} colonnes analysées`;
+    // Applique le profil par défaut / actif sur la sélection reconstruite par l'analyse
+    maybeApplyActiveProfile();
     // Re-rendre les colonnes avec les nouvelles largeurs optimisées
     if (state.step === 2) renderColumns();
   } catch (e) {
     if (status) status.classList.add('hidden');
     console.warn('Analyze optionnel échoué:', e.message);
+    // Même si l'analyse échoue, on applique le profil par défaut sur les colonnes de l'upload
+    maybeApplyActiveProfile();
+    if (state.step === 2) renderColumns();
   }
 }
 
@@ -538,6 +566,239 @@ function selectAllCols(v) {
     state.selection[k].checked = v;
   });
   renderColumns();
+}
+
+/* ============================================================
+   PROFILS DE COLONNES (sélections enregistrées, par utilisateur)
+   ============================================================ */
+async function loadProfiles(selectId) {
+  try {
+    const data = await apiJSON('/profiles');
+    state.profiles = data?.items || [];
+  } catch (e) {
+    console.warn('Chargement des profils échoué:', e.message);
+    state.profiles = [];
+  }
+  renderProfileSelect(selectId);
+}
+
+function renderProfileSelect(selectId) {
+  const sel = document.getElementById('profile-select');
+  if (!sel) return;
+  const keep = selectId !== undefined ? selectId : (sel.value || state.activeProfileId || '');
+  sel.innerHTML = '<option value="">— Sélection manuelle —</option>' +
+    state.profiles.map(p => {
+      const star = p.is_default ? ' ★' : '';
+      const cnt = (p.columns || []).length;
+      return `<option value="${p.id}">${escAttr(p.name)}${star} (${cnt})</option>`;
+    }).join('');
+  // Restaure la sélection si elle existe toujours
+  sel.value = state.profiles.some(p => p.id === keep) ? keep : '';
+  updateProfileButtons();
+}
+
+function escAttr(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function currentSelectedProfile() {
+  const sel = document.getElementById('profile-select');
+  if (!sel || !sel.value) return null;
+  return state.profiles.find(p => p.id === sel.value) || null;
+}
+
+function updateProfileButtons() {
+  const p = currentSelectedProfile();
+  const has = !!p;
+  ['profile-load-btn', 'profile-update-btn', 'profile-rename-btn', 'profile-delete-btn'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.disabled = !has;
+  });
+  const defBtn = document.getElementById('profile-default-btn');
+  if (defBtn) {
+    defBtn.disabled = !has || (p && p.is_default);
+    defBtn.textContent = (p && p.is_default) ? '★ Par défaut' : '★ Défaut';
+  }
+}
+
+function onProfileSelectChange() {
+  const p = currentSelectedProfile();
+  updateProfileButtons();
+  if (p) applyProfile(p);        // chargement en un clic
+  else { state.activeProfileId = null; clearProfileMsg(); }
+}
+
+function applySelectedProfile() {
+  const p = currentSelectedProfile();
+  if (p) applyProfile(p);
+}
+
+/* Applique un profil par défaut au démarrage d'un nouveau workflow, le cas échéant */
+function maybeApplyActiveProfile() {
+  let target = null;
+  if (state.activeProfileId) {
+    target = state.profiles.find(p => p.id === state.activeProfileId);
+  } else {
+    target = state.profiles.find(p => p.is_default);
+  }
+  if (target) applyProfile(target, { auto: true });
+}
+
+function applyProfile(profile, opts = {}) {
+  if (!profile || !state.columns.length) return;
+
+  const available = new Set(state.columns.map(c => c.name));
+  const saved = profile.columns || [];
+  const matched = saved.filter(c => available.has(c.name));
+  const missing = saved.filter(c => !available.has(c.name)).map(c => c.name);
+
+  // Profil totalement incompatible : on n'altère pas la sélection courante
+  if (matched.length === 0) {
+    state.activeProfileId = profile.id;
+    document.getElementById('profile-select').value = profile.id;
+    updateProfileButtons();
+    showProfileMsg('danger',
+      `Aucune colonne du profil « ${profile.name} » n'existe dans ce fichier. ` +
+      `La sélection actuelle est conservée.`);
+    return;
+  }
+
+  // Décoche tout, puis applique les colonnes du profil
+  Object.values(state.selection).forEach(s => { s.checked = false; });
+  matched.forEach(c => {
+    const s = state.selection[c.name];
+    s.checked = true;
+    if (c.width) s.width = c.width;
+  });
+
+  if (profile.date_format) {
+    const df = document.getElementById('date-format');
+    if (df && [...df.options].some(o => o.value === profile.date_format)) {
+      df.value = profile.date_format;
+    }
+  }
+
+  state.activeProfileId = profile.id;
+  document.getElementById('profile-select').value = profile.id;
+  updateProfileButtons();
+  if (state.step === 2) renderColumns();
+
+  // Message clair sur le résultat
+  if (missing.length === 0) {
+    showProfileMsg('success',
+      `Profil « ${profile.name} » chargé · ${matched.length} colonne${matched.length > 1 ? 's' : ''} sélectionnée${matched.length > 1 ? 's' : ''}.`);
+  } else {
+    showProfileMsg('warning',
+      `Profil « ${profile.name} » chargé · ${matched.length} colonne${matched.length > 1 ? 's' : ''} appliquée${matched.length > 1 ? 's' : ''}. ` +
+      `${missing.length} colonne${missing.length > 1 ? 's' : ''} du profil absente${missing.length > 1 ? 's' : ''} ou renommée${missing.length > 1 ? 's' : ''} dans ce fichier : ${missing.join(', ')} (ignorée${missing.length > 1 ? 's' : ''}).`);
+  }
+  if (opts.auto) Toast.info(`Profil par défaut « ${profile.name} » appliqué.`);
+}
+
+function showProfileMsg(type, msg) {
+  const el = document.getElementById('profile-msg');
+  if (!el) return;
+  el.className = `alert alert-${type}`;
+  el.style.marginBottom = '1rem';
+  el.innerHTML = `<span>${msg}</span>`;
+  el.classList.remove('hidden');
+}
+
+function clearProfileMsg() {
+  const el = document.getElementById('profile-msg');
+  if (el) { el.classList.add('hidden'); el.innerHTML = ''; }
+}
+
+function currentSelectionColumns() {
+  return Object.entries(state.selection)
+    .filter(([, v]) => v.checked)
+    .map(([name, v]) => ({ name, width: v.width || 15 }));
+}
+
+async function saveProfile() {
+  const columns = currentSelectionColumns();
+  if (columns.length === 0) { Toast.warn('Sélectionnez au moins une colonne à enregistrer.'); return; }
+
+  const name = prompt('Nom du profil :', '');
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) { Toast.warn('Le nom du profil ne peut pas être vide.'); return; }
+
+  try {
+    const created = await apiJSON('/profiles', {
+      method: 'POST',
+      json: {
+        name: trimmed,
+        columns,
+        date_format: document.getElementById('date-format')?.value || null,
+        is_default: false,
+      },
+    });
+    Toast.success(`Profil « ${created.name} » enregistré.`);
+    state.activeProfileId = created.id;
+    await loadProfiles(created.id);
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+
+async function renameSelectedProfile() {
+  const p = currentSelectedProfile();
+  if (!p) return;
+  const name = prompt('Nouveau nom du profil :', p.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === p.name) return;
+  try {
+    await apiJSON(`/profiles/${p.id}`, { method: 'PUT', json: { name: trimmed } });
+    Toast.success('Profil renommé.');
+    await loadProfiles(p.id);
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+
+async function deleteSelectedProfile() {
+  const p = currentSelectedProfile();
+  if (!p) return;
+  if (!confirm(`Supprimer définitivement le profil « ${p.name} » ?`)) return;
+  try {
+    await apiJSON(`/profiles/${p.id}`, { method: 'DELETE' });
+    Toast.success('Profil supprimé.');
+    if (state.activeProfileId === p.id) { state.activeProfileId = null; clearProfileMsg(); }
+    await loadProfiles('');
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+
+/* Met à jour le profil sélectionné avec la sélection de colonnes actuelle */
+async function updateSelectedProfileColumns() {
+  const p = currentSelectedProfile();
+  if (!p) return;
+  const columns = currentSelectionColumns();
+  if (columns.length === 0) { Toast.warn('Sélectionnez au moins une colonne.'); return; }
+  try {
+    await apiJSON(`/profiles/${p.id}`, {
+      method: 'PUT',
+      json: { columns, date_format: document.getElementById('date-format')?.value || null },
+    });
+    Toast.success(`Profil « ${p.name} » mis à jour.`);
+    await loadProfiles(p.id);
+  } catch (err) {
+    Toast.error(err.message);
+  }
+}
+
+async function setSelectedDefault() {
+  const p = currentSelectedProfile();
+  if (!p) return;
+  try {
+    await apiJSON(`/profiles/${p.id}/default`, { method: 'PUT' });
+    Toast.success(`« ${p.name} » défini comme profil par défaut.`);
+    await loadProfiles(p.id);
+  } catch (err) {
+    Toast.error(err.message);
+  }
 }
 
 /* ===== STEP 3 : SUMMARY ===== */
@@ -676,8 +937,10 @@ function goStep(n) {
 function resetWorkflow() {
   if (state.pollTimer) clearInterval(state.pollTimer);
   Object.assign(state, { step:1, file:null, fileId:null, fileName:null, fileSize:null,
-    columns:[], selection:{}, reportId:null, pollTimer:null });
+    columns:[], selection:{}, reportId:null, pollTimer:null, activeProfileId:null });
   clearFile();
+  clearProfileMsg();
+  renderProfileSelect('');
   document.getElementById('preview-card').classList.add('hidden');
   // Réinitialiser le formulaire email + bouton
   ['email-to', 'email-subject', 'email-body', 'out-filename'].forEach(id => {
