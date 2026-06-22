@@ -1,0 +1,69 @@
+# =========================================================================
+#  Reporting — configuration nginx (HTTPS)
+#  - Termine le TLS sur le 443 avec le certificat interne
+#  - Redirige tout le HTTP (80) vers HTTPS
+#  - Sert le frontend statique + relaie l'API backend sur la même origine
+#    (/api -> backend:8000), ce qui évite tout problème de "mixed content".
+# =========================================================================
+
+# --- HTTP : redirection permanente vers HTTPS ---
+server {
+    listen       80;
+    server_name  _;
+    return 301 https://$host$request_uri;
+}
+
+# --- HTTPS ---
+server {
+    listen       443 ssl;
+    http2        on;
+    server_name  reporting-demo.example.com;
+
+    # Certificat interne (cert serveur + chaîne) et clé privée (montés via volume)
+    ssl_certificate     /certs/reporting-demo.example.com.fullchain.pem;
+    ssl_certificate_key /certs/reporting-demo.example.com.key;
+
+    # Réglages TLS modernes
+    ssl_protocols        TLSv1.2 TLSv1.3;
+    ssl_ciphers          HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache    shared:SSL:10m;
+    ssl_session_timeout  10m;
+
+    # En-têtes de sécurité
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    root   /usr/share/nginx/html;
+    index  login.html index.html;
+
+    # --- API : relais vers le backend (même origine, pas de mixed content) ---
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 50m;        # autoriser l'upload de gros fichiers Excel
+        proxy_read_timeout   300s;       # génération/envoi de rapports longs
+        proxy_connect_timeout 30s;
+    }
+
+    # Pas de cache sur le HTML (toujours la dernière version)
+    location ~* \.html$ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        expires off;
+    }
+
+    # Cache court pour CSS/JS
+    location ~* \.(css|js)$ {
+        add_header Cache-Control "no-cache";
+        expires off;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
