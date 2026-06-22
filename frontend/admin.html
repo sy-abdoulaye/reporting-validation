@@ -390,7 +390,7 @@ async function loadTopUsers() {
         </div>
         <div style="text-align:right">
           <div style="font-weight:600;font-size:.9375rem">${u.total_actions}</div>
-          <div style="font-size:.75rem;color:var(--text-muted)">actions</div>
+          <div style="font-size:.75rem;color:var(--text-muted)">rapport${u.total_actions > 1 ? 's' : ''}</div>
         </div>
       </div>`).join('');
   } catch (err) { Toast.error('Top users : ' + err.message); }

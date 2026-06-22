@@ -153,14 +153,21 @@ class DashboardService:
         }
 
     async def get_top_users(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """ Top utilisateurs par nombre d'actions (upload, analyse, etc)"""
+        """ Top utilisateurs par nombre de fichiers traités (rapports générés avec succès)."""
+
+        # On ne compte que les générations de rapport réussies — c.-à-d. les
+        # fichiers réellement traités — et non l'ensemble des actions d'historique.
+        processed_count = func.count(ProcessingHistory.id).filter(
+            ProcessingHistory.action == "generate",
+            ProcessingHistory.status == "success",
+        ).label('total_actions')
 
         top_users = self.db.query(
             User.id,
             User.username,
             User.email,
             User.full_name,
-            func.count(ProcessingHistory.id).label('total_actions')
+            processed_count,
         ).join(
             ProcessingHistory, ProcessingHistory.user_id == User.id, isouter=True
         ).group_by(
