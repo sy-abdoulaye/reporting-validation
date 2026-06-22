@@ -201,3 +201,202 @@ const ICONS = {
   admin:  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`,
   logout: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
 };
+
+/* ===== SKELETONS ===== */
+// Génère des lignes de squelette pour masquer élégamment le temps de chargement
+// des listes/tableaux (remplace le spinner par un aperçu de la structure).
+function skeletonRows(count = 6) {
+  let html = '<div class="skeleton-list">';
+  for (let i = 0; i < count; i++) {
+    html += `
+      <div class="skeleton-row">
+        <div class="skeleton skeleton-avatar"></div>
+        <div style="flex:1;min-width:0">
+          <div class="skeleton skeleton-text" style="width:${40 + (i * 7) % 35}%"></div>
+          <div class="skeleton skeleton-text" style="width:${20 + (i * 5) % 25}%"></div>
+        </div>
+        <div class="skeleton skeleton-text" style="width:60px"></div>
+      </div>`;
+  }
+  return html + '</div>';
+}
+
+/* ============================================================
+   ROUTEUR CLIENT — navbar/header persistants
+   - Les pages applicatives partagent un même « shell » (navbar) : seule la
+     zone <main class="page-main"> est remplacée à la navigation.
+   - La navbar n'est jamais démontée → aucun flicker, état conservé.
+   - Le script de chaque page n'est exécuté qu'UNE fois (les fonctions/const
+     globales restent définies) ; son init est rejoué à chaque montage.
+   - Repli automatique sur une navigation pleine page en cas de souci.
+   ============================================================ */
+(function () {
+  // Pages applicatives partageant le shell (navbar). Les autres (login,
+  // register, mot de passe…) restent en navigation pleine page classique.
+  const ROUTABLE = new Set(['index', 'reports', 'history', 'profile', 'admin']);
+
+  const pageInits = {};        // key -> fonction d'init (montage)
+  const scrollPos = {};        // url -> position de défilement
+
+  function pageKey(pathname) {
+    const seg = pathname.substring(pathname.lastIndexOf('/') + 1);
+    if (!seg) return 'index';
+    return seg.replace(/\.html$/, '');
+  }
+
+  // On gère le défilement nous-mêmes (restauration au retour arrière).
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+  /* ----- Barre de progression ----- */
+  let bar = null;
+  function ensureBar() {
+    if (bar && document.body.contains(bar)) return bar;
+    bar = document.createElement('div'); bar.id = 'nav-progress';
+    document.body.appendChild(bar);
+    return bar;
+  }
+  function startProgress() { ensureBar().classList.add('active'); }
+  function stopProgress()  { if (bar) bar.classList.remove('active'); }
+
+  /* ----- Capture/lancement de l'init d'une page ----- */
+  function captureInit(key) {
+    if (typeof window.__pageInit === 'function') {
+      pageInits[key] = window.__pageInit;
+      window.__pageInit = null;
+    }
+  }
+  function runInit(key) {
+    const fn = pageInits[key];
+    if (typeof fn === 'function') {
+      try { fn(); } catch (err) { console.error('Erreur init page « ' + key + ' » :', err); }
+    }
+  }
+
+  /* ----- Met à jour le lien actif de la navbar (sans la remonter) ----- */
+  function updateNavActive(pathname) {
+    let cur = pathname.substring(pathname.lastIndexOf('/') + 1) || 'index.html';
+    document.querySelectorAll('.nav-link[href]').forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === cur);
+    });
+  }
+
+  /* ----- Détection d'un lien interne « navigable » ----- */
+  function isInternalNav(a) {
+    if (!a) return false;
+    if (a.target && a.target !== '_self') return false;
+    if (a.hasAttribute('download')) return false;
+    const href = a.getAttribute('href');
+    if (!href || href.startsWith('#') || /^(mailto:|tel:|javascript:)/i.test(href)) return false;
+    let url;
+    try { url = new URL(a.href, location.href); } catch { return false; }
+    if (url.origin !== location.origin) return false;
+    if (url.pathname === location.pathname && url.search === location.search) return false;
+    return true;
+  }
+
+  /* ----- Navigation côté client : swap de <main> uniquement ----- */
+  let busy = false;
+  async function navigate(href, key, push) {
+    if (busy) return;
+    busy = true;
+    startProgress();
+    scrollPos[location.href] = window.scrollY;
+
+    try {
+      const res = await fetch(href, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      if (!doc.querySelector('main.page-main')) throw new Error('zone principale introuvable');
+
+      // On remplace TOUT le contenu de page (main + modales/overlays hors main),
+      // en préservant les éléments persistants : navbar, toasts, barre de
+      // progression et les <script> déjà chargés. → navbar jamais démontée.
+      const isPersistent = (el) =>
+        el.matches('nav.navbar, script') || el.id === 'toasts' || el.id === 'nav-progress';
+
+      // Retire l'ancien contenu de page.
+      Array.from(document.body.children).forEach(el => { if (!isPersistent(el)) el.remove(); });
+
+      // Insère le nouveau contenu juste après la navbar (ordre conservé).
+      // <main class="page-main"> rejoue son animation CSS « content-rise ».
+      let anchor = document.querySelector('nav.navbar') || document.body.lastElementChild;
+      Array.from(doc.body.children).forEach(el => {
+        if (el.matches('nav.navbar, script') || el.id === 'toasts' || el.id === 'nav-progress') return;
+        const node = document.importNode(el, true);
+        if (anchor) anchor.after(node); else document.body.appendChild(node);
+        anchor = node;
+      });
+
+      document.title = doc.title || document.title;
+      if (push) history.pushState({ key }, '', href);
+      updateNavActive(location.pathname);
+
+      // Ré-exécute le script de la page à CHAQUE montage : la page courante
+      // (re)définit ses fonctions/var globales → elle « gagne » sur d'éventuels
+      // homonymes d'autres pages (renderPagination, downloadReport…).
+      // Les déclarations top-level sont des `var`/`function` (ré-exécutables) ;
+      // les hooks globaux (ESC, erreurs) sont idempotents ou délégués.
+      window.__onEsc = null;     // réinitialise le handler ESC délégué
+      window.__pageInit = null;
+      doc.querySelectorAll('body script:not([src])').forEach(s => {
+        const el = document.createElement('script');
+        el.textContent = s.textContent;
+        document.body.appendChild(el);
+        el.remove();
+      });
+      captureInit(key);
+      runInit(key);
+
+      // Défilement : haut pour une nouvelle page, position mémorisée au retour.
+      const y = (!push && scrollPos[href] != null) ? scrollPos[href] : 0;
+      window.scrollTo(0, y);
+    } catch (err) {
+      console.warn('Routeur — repli navigation pleine page :', err.message);
+      location.href = href;   // repli sûr : jamais de navigation cassée
+      return;
+    } finally {
+      busy = false;
+      stopProgress();
+    }
+  }
+
+  /* ----- Interception des clics ----- */
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest('a[href]');
+    if (!isInternalNav(a)) return;
+    // On ne route en client que depuis une page du shell (avec navbar) : les
+    // pages d'auth (sans navbar) gardent une navigation pleine page.
+    if (!document.querySelector('nav.navbar')) return;
+    const url = new URL(a.href, location.href);
+    const key = pageKey(url.pathname);
+    if (!ROUTABLE.has(key)) return;        // pages hors shell → navigation normale
+    e.preventDefault();
+    navigate(url.href, key, true);
+  });
+
+  /* ----- Retour / avance navigateur ----- */
+  window.addEventListener('popstate', () => {
+    const key = pageKey(location.pathname);
+    if (!ROUTABLE.has(key)) { location.reload(); return; }
+    navigate(location.href, key, false);
+  });
+
+  /* ----- Touche Échap déléguée (une seule fois, jamais dupliquée) -----
+     Chaque page à modale définit window.__onEsc ; le routeur le remet à null
+     avant chaque montage. */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && typeof window.__onEsc === 'function') window.__onEsc(e);
+  });
+
+  /* ----- Montage de la page initiale (chargement direct) ----- */
+  function boot() {
+    const key = pageKey(location.pathname);
+    if (!ROUTABLE.has(key)) return;        // pages auth : init via leur propre code
+    captureInit(key);                      // script déjà exécuté nativement
+    runInit(key);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();

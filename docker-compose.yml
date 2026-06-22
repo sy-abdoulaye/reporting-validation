@@ -60,9 +60,9 @@ services:
     depends_on:
       - backend
     ports:
-      - "443:443"   # HTTPS
-      - "80:80"     # HTTP -> redirection 301 vers HTTPS
-      - "8080:80"   # accès HTTP historique (redirige aussi vers HTTPS)
+      - "443:443" # HTTPS
+      - "80:80" # HTTP -> redirection 301 vers HTTPS
+      - "8080:80" # accès HTTP historique (redirige aussi vers HTTPS)
     volumes:
       # Certificats internes (fullchain + clé privée déchiffrée) montés en lecture seule
       - ./cert-tls:/certs:ro

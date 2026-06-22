@@ -1,9 +1,9 @@
 # Sauvegardes de base de données (ne pas versionner les dumps)
 /backups/
 
-# Clés privées TLS — NE JAMAIS versionner (chiffrées ou non)
-cert-tls/*.key
-cert-tls/*.key.pem
+# Certificats TLS — ne rien versionner dans cert-tls/ (sauf le .gitkeep)
+cert-tls/*
+!cert-tls/.gitkeep
 *.key
 
 # Python

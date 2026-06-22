@@ -103,9 +103,7 @@
   </div>
 
   <!-- LIST -->
-  <div id="hist-list">
-    <div class="spinner-center"><div class="spinner spinner-lg"></div></div>
-  </div>
+  <div id="hist-list"></div>
 
   <!-- PAGINATION -->
   <div class="flex items-center justify-between mt-4" id="pagination-wrap" style="display:none!important">
@@ -129,13 +127,13 @@
 </div>
 
 <script>
-const histState = { page: 1, total: 0, pages: 1, items: [], debounce: null };
+var histState = { page: 1, total: 0, pages: 1, items: [], debounce: null };
 
-document.addEventListener('DOMContentLoaded', () => {
+window.__pageInit = () => {
   if (!requireAuth()) return;
   initNav();
   loadHistory();
-});
+};
 
 function debounceLoad() {
   clearTimeout(histState.debounce);
@@ -152,8 +150,7 @@ function resetFilters() {
 
 async function loadHistory(page = 1) {
   histState.page = page;
-  document.getElementById('hist-list').innerHTML =
-    '<div class="spinner-center"><div class="spinner spinner-lg"></div></div>';
+  document.getElementById('hist-list').innerHTML = skeletonRows(8);
   document.getElementById('pagination-wrap').style.display = 'none';
 
   const params = new URLSearchParams({
@@ -185,7 +182,7 @@ async function loadHistory(page = 1) {
 }
 
 /* ===== ACTION ICONS ===== */
-const actionIcon = {
+var actionIcon = {
   upload: { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`, bg: '#eff6ff', color: '#2563eb' },
   analyze:{ svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`, bg: '#cffafe', color: '#0891b2' },
   generate:{svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`, bg: '#dbeafe', color: '#2563eb' },
@@ -363,7 +360,7 @@ function closeModal() {
   document.getElementById('detail-modal').classList.add('hidden');
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+window.__onEsc = () => closeModal();
 document.getElementById('detail-modal')?.addEventListener('click', e => {
   if (e.target === document.getElementById('detail-modal')) closeModal();
 });

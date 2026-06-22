@@ -98,9 +98,7 @@
   <!-- LISTE -->
   <div class="card">
     <div class="card-body" style="padding:0">
-      <div id="reports-table">
-        <div class="spinner-center"><div class="spinner spinner-lg"></div></div>
-      </div>
+      <div id="reports-table"></div>
     </div>
     <div class="card-footer" style="justify-content:space-between" id="footer-wrap">
       <span class="text-sm text-muted" id="page-info"></span>
@@ -112,15 +110,15 @@
 </main>
 
 <script>
-const st = { page: 1, pages: 1, debounce: null, isAdmin: false };
+var st = { page: 1, pages: 1, debounce: null, isAdmin: false };
 
-document.addEventListener('DOMContentLoaded', () => {
+window.__pageInit = () => {
   if (!requireAuth()) return;
   initNav();
   st.isAdmin = Auth.superuser();
   if (st.isAdmin) initAdminView();
   loadReports();
-});
+};
 
 /* Vue admin : sélecteur d'utilisateur + libellés adaptés */
 async function initAdminView() {
@@ -151,8 +149,7 @@ function reportIdOf(item) {
 
 async function loadReports(page = 1) {
   st.page = page;
-  document.getElementById('reports-table').innerHTML =
-    '<div class="spinner-center"><div class="spinner spinner-lg"></div></div>';
+  document.getElementById('reports-table').innerHTML = skeletonRows(8);
 
   const params = new URLSearchParams({
     page, limit: 15,

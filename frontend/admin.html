@@ -9,29 +9,8 @@
   <link rel="stylesheet" href="css/app.css">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   <script src="js/app.js" defer></script>
-  <style>
-    /* Onglets — auto-contenus, alignés sur le design system */
-    .tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--border); margin-bottom:1.5rem; flex-wrap:wrap }
-    .tab-btn {
-      display:inline-flex; align-items:center; gap:.45rem; padding:.7rem 1.1rem;
-      background:transparent; border:none; border-bottom:2px solid transparent;
-      font-size:.9rem; font-weight:500; color:var(--text-sec); cursor:pointer;
-      transition:all var(--ease); margin-bottom:-1px;
-    }
-    .tab-btn:hover { color:var(--text) }
-    .tab-btn.active { color:var(--primary); border-bottom-color:var(--primary) }
-    .tab-btn svg { width:16px; height:16px }
-    .tab-panel { display:none }
-    .tab-panel.active { display:block }
-    th.sortable { cursor:pointer; user-select:none; white-space:nowrap }
-    th.sortable:hover { color:var(--primary) }
-    th.sortable .arrow { opacity:.4; font-size:.7rem }
-    th.sortable.sorted .arrow { opacity:1 }
-    .kv { width:100%; font-size:.875rem; border-collapse:collapse }
-    .kv td { padding:.45rem 0; vertical-align:top }
-    .kv td:first-child { color:var(--text-muted); width:42%; padding-right:1rem }
-    .kv td:last-child { font-weight:500 }
-  </style>
+  <!-- Les styles d'onglets/tableaux admin sont dans css/app.css (partagé), pour
+       rester appliqués en navigation client où le <head> n'est pas rechargé. -->
 </head>
 <body>
 <div id="toasts"></div>
@@ -167,7 +146,7 @@
       </div>
 
       <div class="card-body" style="padding:0">
-        <div id="users-table"><div class="spinner-center"><div class="spinner"></div></div></div>
+        <div id="users-table"></div>
       </div>
       <div class="card-footer" style="justify-content:flex-end">
         <div class="pagination" id="u-pagination"></div>
@@ -208,7 +187,7 @@
       </div>
 
       <div class="card-body" style="padding:0">
-        <div id="audit-table"><div class="spinner-center"><div class="spinner"></div></div></div>
+        <div id="audit-table"></div>
       </div>
       <div class="card-footer" style="justify-content:flex-end">
         <div class="pagination" id="a-pagination"></div>
@@ -277,18 +256,18 @@
 </div>
 
 <script>
-const A = {
+var A = {
   loaded: { dashboard:false, users:false, audit:false },
   users: { page:1, pages:1, debounce:null, sort_by:'created_at', sort_order:'desc', items:[] },
   audit: { page:1, pages:1, debounce:null, sort_by:'created_at', sort_order:'desc', items:[] },
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+window.__pageInit = () => {
   if (!requireAdmin()) return;
   initNav();
   loadDashboard();           // onglet par défaut
   A.loaded.dashboard = true;
-});
+};
 
 /* ===== TABS ===== */
 function switchTab(tab) {
@@ -324,7 +303,7 @@ function auditStatusBadge(s) {
     ? '<span class="badge badge-danger">Échec</span>'
     : '<span class="badge badge-success">Succès</span>';
 }
-const ACTION_LABELS = {
+var ACTION_LABELS = {
   login:'Connexion', login_failed:'Connexion échouée', logout:'Déconnexion', register:'Inscription',
   'user.update':'Modification utilisateur', 'user.delete':'Suppression utilisateur',
   'report.delete':'Suppression rapport', 'report.rename':'Renommage rapport', 'report.generate':'Génération rapport',
@@ -411,7 +390,7 @@ function arrow(state, field) {
 
 async function loadUsers(page = 1) {
   A.users.page = page;
-  document.getElementById('users-table').innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  document.getElementById('users-table').innerHTML = skeletonRows(6);
   const params = new URLSearchParams({ page, limit:15, sort_by:A.users.sort_by, sort_order:A.users.sort_order });
   const search = document.getElementById('u-search').value.trim();
   const active = document.getElementById('u-active').value;
@@ -594,7 +573,7 @@ function sortAudit(field) {
 
 async function loadAudit(page = 1) {
   A.audit.page = page;
-  document.getElementById('audit-table').innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  document.getElementById('audit-table').innerHTML = skeletonRows(6);
   const params = new URLSearchParams({ page, limit:20, sort_by:A.audit.sort_by, sort_order:A.audit.sort_order });
   const search = document.getElementById('a-search').value.trim();
   const cat = document.getElementById('a-category').value;
@@ -688,9 +667,7 @@ function renderPagination(elId, data, fnName) {
 }
 
 /* ===== MODAL CLOSE (Escape / backdrop) ===== */
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeEditModal(); closeDetailModal(); closeAuditModal(); }
-});
+window.__onEsc = () => { closeEditModal(); closeDetailModal(); closeAuditModal(); };
 ['edit-modal','detail-modal','audit-modal'].forEach(id => {
   document.getElementById(id)?.addEventListener('click', e => {
     if (e.target.id === id) e.target.classList.add('hidden');

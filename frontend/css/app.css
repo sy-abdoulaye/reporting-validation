@@ -56,6 +56,67 @@ input, button, textarea, select { font: inherit; }
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* ===== NAVIGATION FLUIDE (crossfade MPA piloté par app.js) ===== */
+/* Réserve la gouttière de défilement : pas de saut horizontal entre une page
+   qui défile et une page qui ne défile pas. */
+html { scrollbar-gutter: stable; background: var(--bg); }
+
+/* Le fond de page suit le thème : pas de flash blanc pendant le repaint. */
+html, body { background: var(--bg); }
+
+/* Animations de page :
+   - <body> en OPACITÉ seule au tout premier chargement (jamais de transform sur
+     body : cela créerait un bloc englobant pour les position:fixed et ferait
+     bouger la navbar).
+   - À chaque navigation client, SEUL <main class="page-main"> est réinséré : il
+     rejoue « content-rise » (fondu + léger glissement), tandis que la navbar
+     (jamais démontée) reste parfaitement immobile → aucun flicker.
+   Animations inconditionnelles → s'achèvent même si JS échoue (pas d'écran vide). */
+@media (prefers-reduced-motion: no-preference) {
+  body { animation: page-fade-in .3s ease both; }
+  .page-main { animation: content-rise .34s cubic-bezier(.4, 0, .2, 1) both; }
+}
+
+@keyframes page-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes content-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Barre de progression de navigation (style « app moderne »). */
+#nav-progress {
+  position: fixed; top: 0; left: 0; height: 3px; width: 100%;
+  z-index: 9999; pointer-events: none;
+  background: linear-gradient(90deg, var(--primary), var(--info));
+  transform: scaleX(0); transform-origin: 0 50%;
+  opacity: 0; transition: opacity .2s ease;
+}
+#nav-progress.active { opacity: 1; animation: nav-progress 1.4s ease-out forwards; }
+@keyframes nav-progress {
+  0%   { transform: scaleX(0); }
+  40%  { transform: scaleX(.55); }
+  80%  { transform: scaleX(.82); }
+  100% { transform: scaleX(.95); }
+}
+
+/* ===== SKELETONS (états de chargement élégants) ===== */
+.skeleton {
+  background: linear-gradient(100deg, var(--border) 30%, #eef2f7 50%, var(--border) 70%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shine 1.3s ease-in-out infinite;
+}
+.skeleton-text { height: .75rem; margin: .35rem 0; }
+.skeleton-row {
+  display: flex; align-items: center; gap: .875rem;
+  padding: .9rem 1.25rem; border-bottom: 1px solid var(--border);
+}
+.skeleton-avatar { width: 32px; height: 32px; border-radius: var(--radius-full); flex-shrink: 0; }
+@keyframes skeleton-shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  body, .page-main { animation: none !important; }
+  #nav-progress.active { animation: none; transform: scaleX(.9); }
+  .skeleton { animation: none; }
+}
+
 /* ===== LAYOUT ===== */
 .container    { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
 .container-sm { max-width:  480px; margin: 0 auto; padding: 0 1.5rem; }
@@ -537,3 +598,26 @@ tbody tr:hover td { background: #f8fafc; }
   .auth-card { padding: 1.75rem 1.25rem; }
   .nav-links { display: none; }
 }
+
+/* ===== ONGLETS & TABLEAUX ADMIN (déplacé depuis admin.html pour rester
+   disponible en navigation client, où le <head> des pages n'est pas rechargé) ===== */
+.tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--border); margin-bottom:1.5rem; flex-wrap:wrap }
+.tab-btn {
+  display:inline-flex; align-items:center; gap:.45rem; padding:.7rem 1.1rem;
+  background:transparent; border:none; border-bottom:2px solid transparent;
+  font-size:.9rem; font-weight:500; color:var(--text-sec); cursor:pointer;
+  transition:all var(--ease); margin-bottom:-1px;
+}
+.tab-btn:hover { color:var(--text) }
+.tab-btn.active { color:var(--primary); border-bottom-color:var(--primary) }
+.tab-btn svg { width:16px; height:16px }
+.tab-panel { display:none }
+.tab-panel.active { display:block }
+th.sortable { cursor:pointer; user-select:none; white-space:nowrap }
+th.sortable:hover { color:var(--primary) }
+th.sortable .arrow { opacity:.4; font-size:.7rem }
+th.sortable.sorted .arrow { opacity:1 }
+.kv { width:100%; font-size:.875rem; border-collapse:collapse }
+.kv td { padding:.45rem 0; vertical-align:top }
+.kv td:first-child { color:var(--text-muted); width:42%; padding-right:1rem }
+.kv td:last-child { font-weight:500 }

@@ -231,12 +231,12 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+window.__pageInit = () => {
   if (!requireAuth()) return;
   initNav();
   loadProfileData();
   loadKeys();
-});
+};
 
 /* ===== PROFILE ===== */
 async function loadProfileData() {
@@ -378,9 +378,7 @@ async function deleteKey(id, name) {
   } catch (err) { Toast.error(err.message); }
 }
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeKeyModal(); closeRevealModal(); }
-});
+window.__onEsc = () => { closeKeyModal(); closeRevealModal(); };
 </script>
 </body>
 </html>

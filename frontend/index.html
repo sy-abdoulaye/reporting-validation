@@ -321,8 +321,11 @@ function showFatal(msg) {
   }
   b.textContent = '⚠ ERREUR JS : ' + msg;
 }
-window.addEventListener('error', e => showFatal((e.message || 'inconnue') + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno));
-window.addEventListener('unhandledrejection', e => showFatal('Promise rejetée : ' + (e.reason?.message || e.reason)));
+if (!window.__idxErrHooked) {
+  window.__idxErrHooked = true;
+  window.addEventListener('error', e => showFatal((e.message || 'inconnue') + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno));
+  window.addEventListener('unhandledrejection', e => showFatal('Promise rejetée : ' + (e.reason?.message || e.reason)));
+}
 
 /* ============================================================
    INDEX PAGE — Workflow state machine
@@ -341,12 +344,12 @@ window.state = {
   activeProfileId: null, // profil actuellement appliqué (null = sélection manuelle)
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+window.__pageInit = () => {
   if (!requireAuth()) return;
   initNav();
   initDropZone();
   loadProfiles();
-});
+};
 
 /* ===== DROP ZONE ===== */
 function initDropZone() {
