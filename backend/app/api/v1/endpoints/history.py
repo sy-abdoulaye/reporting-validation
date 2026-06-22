@@ -20,7 +20,7 @@ async def get_history(
     search: Optional[str] = None,
     days: Optional[int] = Query(None, ge=1, le=365),
     user_id: Optional[UUID] = Query(None, description="Filtrer par utilisateur (admin uniquement)"),
-    current_user: User = Depends(AuthDependencies.get_current_user),
+    current_user: User = Depends(AuthDependencies.get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
