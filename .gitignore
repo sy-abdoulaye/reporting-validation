@@ -1,0 +1,18 @@
+# Sauvegardes de base de données (ne pas versionner les dumps)
+/backups/
+
+# Clés privées TLS — NE JAMAIS versionner (chiffrées ou non)
+cert-tls/*.key
+cert-tls/*.key.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+
+# Environnement
+.env
+backend/.env
+
+# Divers
+.DS_Store
