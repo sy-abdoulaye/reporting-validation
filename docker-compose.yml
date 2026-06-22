@@ -48,7 +48,10 @@ services:
       - uploads:/app/data/uploads
       - reports:/app/data/reports
     ports:
-      - "8000:8000"
+      # Backend exposé en local uniquement (debug sur le serveur) : plus aucun
+      # accès HTTP en clair depuis le réseau. L'accès externe passe par nginx en
+      # HTTPS (/api, /docs). nginx joint le backend via le réseau Docker interne.
+      - "127.0.0.1:8000:8000"
 
   # ===== Frontend (nginx, terminaison TLS) =====
   frontend:
