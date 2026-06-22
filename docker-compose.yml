@@ -50,7 +50,7 @@ services:
     ports:
       - "8000:8000"
 
-  # ===== Frontend (nginx) =====
+  # ===== Frontend (nginx, terminaison TLS) =====
   frontend:
     build:
       context: ./frontend
@@ -60,7 +60,12 @@ services:
     depends_on:
       - backend
     ports:
-      - "8080:80"
+      - "443:443"   # HTTPS
+      - "80:80"     # HTTP -> redirection 301 vers HTTPS
+      - "8080:80"   # accès HTTP historique (redirige aussi vers HTTPS)
+    volumes:
+      # Certificats internes (fullchain + clé privée déchiffrée) montés en lecture seule
+      - ./cert-tls:/certs:ro
 
   # ===== Sauvegardes automatiques de la base =====
   db-backup:
