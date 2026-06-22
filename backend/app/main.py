@@ -7,6 +7,7 @@ from app.api.v1.endpoints.email import router as email_router
 from app.api.v1.endpoints.history import router as history_router
 from app.api.v1.endpoints.auth import router as api_router
 from app.api.v1.endpoints.admin import router as admin_router
+from app.api.v1.endpoints.column_profiles import router as profiles_router
 
 
 app = FastAPI(title="Reporting API")
@@ -29,6 +30,7 @@ app.include_router(email_router, prefix="/api/v1")  # Importer le router d'envoi
 app.include_router(generate_router, prefix="/api/v1")  # Importer le router de génération de rapports
 app.include_router(history_router, prefix="/api/v1")  # Importer le router d'historique
 app.include_router(upload_router, prefix="/api/v1")
+app.include_router(profiles_router, prefix="/api/v1")  # Importer le router des profils de colonnes
 
 @app.get('/')
 async def root():
