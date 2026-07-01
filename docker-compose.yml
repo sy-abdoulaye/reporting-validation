@@ -42,16 +42,13 @@ services:
       SMTP_TLS: "false"
       EMAIL_FROM: reporting@example.com
       EMAIL_FROM_NAME: Reporting App
-      FRONTEND_URL: http://203.0.113.141:8080
+      FRONTEND_URL: https://203.0.113.141:8080
     volumes:
       # Persiste les fichiers uploadés et générés
       - uploads:/app/data/uploads
       - reports:/app/data/reports
-    ports:
-      # Backend exposé en local uniquement (debug sur le serveur) : plus aucun
-      # accès HTTP en clair depuis le réseau. L'accès externe passe par nginx en
-      # HTTPS (/api, /docs). nginx joint le backend via le réseau Docker interne.
-      - "127.0.0.1:8000:8000"
+    # Pas de port publié : le backend reste en HTTP sur le réseau Docker interne.
+    # L'accès externe se fait en HTTPS via nginx (443 pour l'app, 8000 pour l'API/docs).
 
   # ===== Frontend (nginx, terminaison TLS) =====
   frontend:
@@ -63,9 +60,8 @@ services:
     depends_on:
       - backend
     ports:
-      - "443:443" # HTTPS
-      - "80:80" # HTTP -> redirection 301 vers HTTPS
-      - "8080:80" # accès HTTP historique (redirige aussi vers HTTPS)
+      - "8080:8080" # HTTPS — frontend (app) avec port visible dans l'URL
+      - "8000:8000" # HTTPS — backend (API + /docs), TLS terminé par nginx
     volumes:
       # Certificats internes (fullchain + clé privée déchiffrée) montés en lecture seule
       - ./cert-tls:/certs:ro
