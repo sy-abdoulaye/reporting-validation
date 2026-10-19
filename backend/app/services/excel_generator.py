@@ -1,12 +1,64 @@
 
 import unicodedata
+import warnings
 from pathlib import Path
 from typing import Any, Dict
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl import Workbook
 import pandas as pd
+from pandas.api.types import is_datetime64_any_dtype
 
 from app.services.excel_reader import read_excel_path
+
+
+def _parse_dates(obj):
+    """pd.to_datetime en dayfirst, valeurs invalides → NaT, sans le UserWarning
+    « Could not infer format » (les dates textuelles ont des formats variés)."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return pd.to_datetime(obj, dayfirst=True, errors="coerce")
+
+
+# Conversion d'un format strftime Python (ex. "%d/%m/%Y %H:%M:%S") en format de
+# nombre Excel (ex. "DD/MM/YYYY HH:MM:SS") pour écrire de VRAIES dates typées,
+# affichées comme l'utilisateur le souhaite (et non du texte).
+_STRFTIME_TO_EXCEL = [
+    ("%Y", "YYYY"), ("%y", "YY"),
+    ("%m", "MM"), ("%d", "DD"),
+    ("%H", "HH"), ("%I", "HH"),
+    ("%M", "MM"), ("%S", "SS"),
+    ("%p", "AM/PM"),
+]
+
+
+def _excel_number_format(strftime_fmt: str) -> str:
+    """Traduit un format strftime en format de nombre Excel.
+    Excel distingue mois/minutes par le contexte (« MM » après « HH: » = minutes)."""
+    fmt = strftime_fmt or "%d/%m/%Y"
+    for token, repl in _STRFTIME_TO_EXCEL:
+        fmt = fmt.replace(token, repl)
+    return fmt
+
+
+def _is_date_column(series: "pd.Series") -> bool:
+    """Détecte une colonne de dates, y compris quand les dates sont stockées en
+    TEXTE (exports Jira/HTML). Conservateur : exige un séparateur de date et un
+    fort taux de valeurs réellement analysables comme dates (évite les faux
+    positifs sur des identifiants ou des nombres)."""
+    if is_datetime64_any_dtype(series):
+        return True
+    if series.dtype != object:
+        return False
+    sample = series.dropna()
+    if sample.empty:
+        return False
+    sample = sample.head(200).astype(str).str.strip()
+    # Ressemble à une date : contient un chiffre ET un séparateur / ou -
+    date_like = sample.str.contains(r"\d") & sample.str.contains(r"[/\-]")
+    if date_like.mean() < 0.8:
+        return False
+    parsed = _parse_dates(sample)
+    return parsed.notna().mean() >= 0.8
 
 
 def _normalize(value: Any) -> str:
@@ -123,7 +175,7 @@ class ExcelGenerator:
         years = None
         year_col_idx = None
         if creation_col is not None:
-            parsed = pd.to_datetime(df[creation_col], dayfirst=True, errors="coerce")
+            parsed = _parse_dates(df[creation_col])
             years = [None if pd.isna(d) else int(d.year) for d in parsed]
             year_col_idx = len(columns) + 1
 
@@ -141,6 +193,32 @@ class ExcelGenerator:
             for col_idx, col_info in enumerate(columns, start=1)
             if _normalize(col_info["name"]) in LEFT_ALIGN_COLUMN_NAMES
         }
+
+        # Format de date Excel dérivé du format demandé, pour écrire de VRAIES dates
+        # (typées, filtrables/triables) plutôt que du texte.
+        excel_date_format = _excel_number_format(date_format)
+        # Colonne "Création" : date et heure sur deux lignes (saut de ligne dans le
+        # format de nombre + wrap_text) → reste compacte tout en restant une date.
+        excel_date_format_creation = excel_date_format.replace(" ", "\n")
+
+        # Index (1-based) des colonnes de type date (hors "Création", traitée à part) :
+        # leurs valeurs seront écrites comme dates réelles avec le format d'affichage.
+        date_col_idxs = set()
+        for col_idx, col_info in enumerate(columns, start=1):
+            if col_idx == creation_col_idx:
+                continue
+            name = col_info["name"]
+            if name in df_filtered.columns and _is_date_column(df_filtered[name]):
+                date_col_idxs.add(col_idx)
+
+        # Pré-conversion vectorisée des colonnes de date (perf + évite de parser
+        # cellule par cellule). Aligné par position sur les lignes de df_filtered.
+        date_values = {}
+        for col_idx, col_info in enumerate(columns, start=1):
+            if col_idx in date_col_idxs or col_idx == creation_col_idx:
+                name = col_info["name"]
+                if name in df_filtered.columns:
+                    date_values[col_idx] = _parse_dates(df_filtered[name]).to_numpy()
 
         # Écrire les en-têtes de colonne avec style
         for col_idx, col_info in enumerate(columns, start=1):
@@ -175,16 +253,31 @@ class ExcelGenerator:
 
         # Écrire les données avec style (seulement les colonnes sélectionnées)
         for row_idx, row in enumerate(df_filtered.itertuples(index=False), start=2):
+            pos = row_idx - 2  # position 0-based de la ligne (pour les dates pré-converties)
             for col_idx, value in enumerate(row, start=1):
+                number_format = None
                 # Colonne "Environnement et phase" → ne garder que le premier mot
                 if col_idx == env_phase_col_idx:
                     value = _first_word(value)
-                # Colonne "Création" → date et heure sur deux lignes
+                # Colonne "Création" → vraie date, affichée date/heure sur deux lignes
                 elif col_idx == creation_col_idx:
-                    dt = pd.to_datetime(value, dayfirst=True, errors="coerce")
-                    if not pd.isna(dt):
-                        value = dt.strftime(date_format).replace(" ", "\n")
+                    dt = date_values[col_idx][pos]
+                    if pd.isna(dt):
+                        value = None if pd.isna(value) else value  # garde le texte si non-date
+                    else:
+                        value = pd.Timestamp(dt).to_pydatetime()
+                        number_format = excel_date_format_creation
+                # Autres colonnes de type date → vraie date typée + format d'affichage
+                elif col_idx in date_col_idxs:
+                    dt = date_values[col_idx][pos]
+                    if pd.isna(dt):
+                        value = None if pd.isna(value) else value  # garde le texte si non-date
+                    else:
+                        value = pd.Timestamp(dt).to_pydatetime()
+                        number_format = excel_date_format
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                if number_format:
+                    cell.number_format = number_format
                 # Valeur "Critique" dans la colonne Priorité → texte rouge en gras
                 if col_idx == priority_col_idx and _normalize(value) in CRITICAL_VALUES:
                     cell.font = self.critical_font
